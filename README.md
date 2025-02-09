@@ -11,7 +11,8 @@ simple. It primarily focuses on tasks per directory that you launch neovim in.
 I created this to help track ideas as they pop up while allowing me to not
 lose focus on the task at hand. I hope you find it useful as well.
 
-[![Screenshot-2025-02-08-at-7-31-44-PM.png](https://i.postimg.cc/kgCSf2pf/Screenshot-2025-02-08-at-7-31-44-PM.png)](https://postimg.cc/pp0ydLxF)
+![todo nvim_example](https://github.com/user-attachments/assets/78081dc5-a52b-4980-8ddd-c28497fd2417)
+
 
 ## Usage
 
