@@ -66,7 +66,10 @@ M.save_project = function(project, buf)
       local title = line:sub(5)
       table.insert(current_project.tasks, { title = title, done = done })
     else
-			table.insert(current_project.tasks, { title = line, done = false })
+			line = vim.fn.trim(line)
+			if line ~= "" then
+				table.insert(current_project.tasks, { title = line, done = false })
+			end
     end
   end
 
