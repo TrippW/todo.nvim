@@ -35,6 +35,19 @@ local save_file = function(data)
   file:close()
 end
 
+-- @return string[]: list of projects
+M.list_projects = function()
+	local projects = M.projects.projects
+	local lines = {}
+	for name, _ in pairs(projects) do
+		table.insert(lines, name)
+	end
+
+	table.sort(lines)
+
+	return lines
+end
+
 local render_project = function(project)
   local current_project = M.projects.projects[project]
 
@@ -50,6 +63,32 @@ local render_project = function(project)
 
   vim.api.nvim_buf_set_lines(M.display.tasks.buffer, 0, #lines, false, lines);
 end
+
+local highlight_project = function(name)
+	local width = vim.o.columns
+	local projects = M.list_projects()
+
+	vim.api.nvim_buf_set_lines(M.display.projects.buffer, 0, #projects, false, projects);
+	vim.api.nvim_buf_clear_namespace(M.display.projects.buffer, -1, 0, -1)
+
+	local cur_index = -1
+	-- Todo: swap with a binary search
+	for i, project in ipairs(projects) do
+		if project == name then
+			cur_index = i
+			break
+		end
+	end
+
+	if cur_index == -1 then
+		print("oops")
+		return
+	end
+
+	vim.api.nvim_buf_add_highlight(M.display.projects.buffer, -1, "Visual", cur_index - 1, 0, width)
+	vim.api.nvim_win_set_cursor(M.display.projects.window, { cur_index, 1 })
+end
+
 
 M.save_project = function(project, buf)
   local current_project = M.projects.projects[project]
@@ -77,15 +116,37 @@ M.save_project = function(project, buf)
   save_file(M.projects)
 end
 
+local draw = function ()
+	render_project(M.cur_project)
+	highlight_project(M.cur_project)
+end
+
+M.select_project = function (name)
+	if name == nil then
+		return
+	end
+
+	if M.cur_project == name then
+		return
+	end
+
+	if M.cur_project ~= nil then
+		M.save_project(M.cur_project, M.display.tasks.buffer)
+	end
+
+	M.cur_project = name
+
+	if M.display.tasks.window and vim.api.nvim_win_is_valid(M.display.tasks.window) then
+		draw()
+	end
+end
+
 M.toggle_task = function()
   M.save_project(M.cur_project, M.display.tasks.buffer)
   local current_project = M.projects.projects[M.cur_project]
-
   local task_i = vim.fn.getcurpos(M.display.tasks.window)[2]
   current_project.tasks[task_i].done = not current_project.tasks[task_i].done
-
   render_project(M.cur_project)
-
   M.save_project(M.cur_project, M.display.tasks.buffer)
 end
 
@@ -133,52 +194,21 @@ M.toggle = function()
 		M.display.tasks.window = win
 		M.display.tasks.buffer = buff
 
-    M.display.projects.buffer = vim.api.nvim_create_buf(false, true);
-    M.display.projects.window = vim.api.nvim_open_win(M.display.projects.buffer, false, {
-      relative = "editor",
-      row = 0,
-      col = 4,
-      height = 3,
-      width = width - 8,
-      border = "single",
+		M.display.projects.buffer = vim.api.nvim_create_buf(false, true);
+		M.display.projects.window = vim.api.nvim_open_win(M.display.projects.buffer, false, {
+			relative = "editor",
+			row = 0,
+			col = 4,
+			height = 3,
+			width = width - 8,
+			border = "single",
 			title = "Projects",
-    });
+		});
 
-		local projects = M.list_projects()
-
-		vim.api.nvim_buf_set_lines(M.display.projects.buffer, 0, #projects, false, projects);
-
-		local cur_index = 1
-		-- Todo: swap with a binary search
-		for i, project in ipairs(projects) do
-			if project == M.cur_project then
-				cur_index = i
-				break
-			end
-		end
-
-		vim.api.nvim_buf_add_highlight(M.display.projects.buffer, -1, "Visual", cur_index - 1, 0, width)
-		vim.api.nvim_win_set_cursor(M.display.projects.window, { cur_index, 1 })
-
-    set_keymaps(buff, true)
-    render_project(M.cur_project)
-  end
-end
-
--- @return string[]: list of projects
-M.list_projects = function()
-	local projects = M.projects.projects
-	local lines = {}
-	for name, _ in pairs(projects) do
-		table.insert(lines, name)
+		set_keymaps(buff, true)
+		draw()
 	end
-
-	table.sort(lines)
-
-	return lines
 end
-
-
 
 -- @param data string: data to parse
 -- @return todo.ProjectList
@@ -186,7 +216,8 @@ local parse = function(data)
   return vim.json.decode(data)
 end
 
-M.cur_project = vim.fn.getcwd()
 M.projects = parse(load_file())
+local cwd = vim.fn.getcwd()
+M.select_project(cwd)
 
 return M
