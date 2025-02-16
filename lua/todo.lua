@@ -12,8 +12,11 @@ local M = {}
 -- @field path string: path to the project
 -- @field tasks []todo.Task: list of tasks in the project
 
-local file_path = os.getenv("HOME") .. "/.local/share/nvim/todo.json"
-
+local root_path = vim.fn.stdpath("data")
+if root_path == nil then
+	root_path = vim.fn.getenv("HOME")
+end
+local file_path = vim.fs.joinpath(root_path, "todo.json")
 
 -- @return string: load the todo file
 local load_file = function()
@@ -45,7 +48,7 @@ local render_project = function(project)
     table.insert(lines, line)
   end
 
-  vim.api.nvim_buf_set_lines(M.cur_buf, 0, #lines, false, lines);
+  vim.api.nvim_buf_set_lines(M.display.tasks.buffer, 0, #lines, false, lines);
 end
 
 M.save_project = function(project, buf)
@@ -63,7 +66,7 @@ M.save_project = function(project, buf)
       local title = line:sub(5)
       table.insert(current_project.tasks, { title = title, done = done })
     else
-      table.insert(current_project.tasks, { title = line, done = false })
+			table.insert(current_project.tasks, { title = line, done = false })
     end
   end
 
@@ -72,16 +75,15 @@ M.save_project = function(project, buf)
 end
 
 M.toggle_task = function()
-  M.save_project(M.cur_project, M.cur_buf)
+  M.save_project(M.cur_project, M.display.tasks.buffer)
   local current_project = M.projects.projects[M.cur_project]
 
-  local task_i = vim.fn.getcurpos(M.cur_win)[2]
-  print(task_i)
+  local task_i = vim.fn.getcurpos(M.display.tasks.window)[2]
   current_project.tasks[task_i].done = not current_project.tasks[task_i].done
 
   render_project(M.cur_project)
 
-  M.save_project(M.cur_project, M.cur_buf)
+  M.save_project(M.cur_project, M.display.tasks.buffer)
 end
 
 local set_keymaps = function(buff, enable)
@@ -94,36 +96,86 @@ local set_keymaps = function(buff, enable)
 	end
 end
 
+M.display = {
+	tasks = { buffer = -1, window = -1 },
+	projects = { buffer = -1, window = -1 },
+}
+
 M.toggle = function()
-	if M.cur_buf then
-		if vim.fn.bufwinnr(M.cur_buf) ~= -1 then
-			M.save_project(M.cur_project, M.cur_buf)
-			set_keymaps(M.cur_buf, false)
-			vim.api.nvim_win_close(M.cur_win, true)
-		end
-		M.cur_win = nil
-		M.cur_buf = nil
+	if M.display.tasks.window and vim.api.nvim_win_is_valid(M.display.tasks.window) then
+		M.save_project(M.cur_project, M.display.tasks.buffer)
+		set_keymaps(M.display.tasks.window, false)
+		vim.api.nvim_win_close(M.display.tasks.window, true)
+		vim.api.nvim_win_close(M.display.projects.window, true)
+		M.display.tasks.window = nil
+		M.display.tasks.buffer = nil
+		M.display.projects.window = nil
+		M.display.projects.buffer = nil
   else
+		local width = vim.o.columns
+		local height = vim.o.lines
+
     local buff = vim.api.nvim_create_buf(false, true);
-    local height = vim.fn.winheight(0);
-    local width = vim.fn.winwidth(0);
     local win = vim.api.nvim_open_win(buff, true, {
-      relative = "win",
-      row = 2,
+      relative = "editor",
+      row = 5,
       col = 4,
-      height = height - 4,
+      height = height - 8 - 2,
       width = width - 8,
       border = "single",
       title = "Todo",
     });
 
-    M.cur_win = win;
-    M.cur_buf = buff;
+
+		M.display.tasks.window = win
+		M.display.tasks.buffer = buff
+
+    M.display.projects.buffer = vim.api.nvim_create_buf(false, true);
+    M.display.projects.window = vim.api.nvim_open_win(M.display.projects.buffer, false, {
+      relative = "editor",
+      row = 0,
+      col = 4,
+      height = 3,
+      width = width - 8,
+      border = "single",
+			title = "Projects",
+    });
+
+		local projects = M.list_projects()
+
+		vim.api.nvim_buf_set_lines(M.display.projects.buffer, 0, #projects, false, projects);
+
+		local cur_index = 1
+		-- Todo: swap with a binary search
+		for i, project in ipairs(projects) do
+			if project == M.cur_project then
+				cur_index = i
+				break
+			end
+		end
+
+		vim.api.nvim_buf_add_highlight(M.display.projects.buffer, -1, "Visual", cur_index - 1, 0, width)
+		vim.api.nvim_win_set_cursor(M.display.projects.window, { cur_index, 1 })
 
     set_keymaps(buff, true)
     render_project(M.cur_project)
   end
 end
+
+-- @return string[]: list of projects
+M.list_projects = function()
+	local projects = M.projects.projects
+	local lines = {}
+	for name, _ in pairs(projects) do
+		table.insert(lines, name)
+	end
+
+	table.sort(lines)
+
+	return lines
+end
+
+
 
 -- @param data string: data to parse
 -- @return todo.ProjectList
