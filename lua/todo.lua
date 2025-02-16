@@ -1,10 +1,14 @@
 local M = {}
 
+M.display = {
+	tasks = { buffer = -1, window = -1 },
+	projects = { buffer = -1, window = -1 },
+}
+
 -- @class todo.Task
 -- @field title string: title of the task
 -- @field created_at number: time the task was created
 -- @field done boolean: whether the task is complete
-
 
 -- @class todo.Project
 -- @field id string: unique identifier for the project
@@ -36,7 +40,7 @@ local function save_file(data)
 end
 
 -- @return string[]: list of projects
-M.list_projects = function()
+function M.list_projects()
 	local projects = M.projects.projects
 	local lines = {}
 	for name, _ in pairs(projects) do
@@ -55,6 +59,8 @@ local function render_project(project)
     current_project = { tasks = {} }
   end
 
+	local cur_lines = vim.api.nvim_buf_get_lines(M.display.tasks.buffer, 0, -1, false)
+
   local lines = {}
   for _, task in ipairs(current_project.tasks) do
     local line = "[" .. (task.done and "X" or " ") .. "] " .. task.title
@@ -62,6 +68,9 @@ local function render_project(project)
   end
 
   vim.api.nvim_buf_set_lines(M.display.tasks.buffer, 0, #lines, false, lines);
+	if #lines < #cur_lines then
+		vim.api.nvim_buf_set_lines(M.display.tasks.buffer, #lines, #cur_lines, false, {})
+	end
 end
 
 local function highlight_project(name)
@@ -89,44 +98,50 @@ local function highlight_project(name)
 	vim.api.nvim_win_set_cursor(M.display.projects.window, { cur_index, 1 })
 end
 
+local function save_project_from_table(project, tasks)
+  M.projects.projects[project] = tasks
+  save_file(M.projects)
+end
 
-M.save_project = function(project, buf)
+local function save_project_from_buffer(project, buf)
   local current_project = M.projects.projects[project]
 
   if current_project == nil then
     current_project = { tasks = {} }
   end
 
-  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-  current_project.tasks = {}
-  for _, line in ipairs(lines) do
-    if line:sub(1, 1) == "[" then
-      local done = line:sub(2, 2) == "X"
-      local title = line:sub(5)
-      table.insert(current_project.tasks, { title = title, done = done })
-    else
-			line = vim.fn.trim(line)
-			if line ~= "" then
-				table.insert(current_project.tasks, { title = line, done = false })
+	print(buf)
+	if buf and vim.api.nvim_buf_is_valid(buf) then
+		local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+		current_project.tasks = {}
+		for _, line in ipairs(lines) do
+			if line:sub(1, 1) == "[" then
+				local done = line:sub(2, 2) == "X"
+				local title = line:sub(5)
+				table.insert(current_project.tasks, { title = title, done = done })
+			else
+				line = vim.fn.trim(line)
+				if line ~= "" then
+					table.insert(current_project.tasks, { title = line, done = false })
+				end
 			end
-    end
-  end
-
-  M.projects.projects[project] = current_project
-  save_file(M.projects)
+		end
+		save_project_from_table(project, current_project)
+	end
 end
 
-local draw = function ()
+function M.save_project(project, buf)
+	save_project_from_buffer(project, buf)
+	save_file(M.projects)
+end
+
+local function draw()
 	render_project(M.cur_project)
 	highlight_project(M.cur_project)
 end
 
-M.select_project = function (name)
-	if name == nil then
-		return
-	end
-
-	if M.cur_project == name then
+function M.select_project(name)
+	if name == nil or M.cur_project == name then
 		return
 	end
 
@@ -136,12 +151,21 @@ M.select_project = function (name)
 
 	M.cur_project = name
 
+	if not M.cur_project_exists() then
+		local default_project = { tasks = {} }
+		M.projects.projects[M.cur_project] = default_project
+	end
+
 	if M.display.tasks.window and vim.api.nvim_win_is_valid(M.display.tasks.window) then
 		draw()
 	end
 end
 
-M.toggle_task = function()
+function M.cur_project_exists()
+	return M.projects.projects[M.cur_project] ~= nil
+end
+
+function M.toggle_task()
   M.save_project(M.cur_project, M.display.tasks.buffer)
   local current_project = M.projects.projects[M.cur_project]
   local task_i = vim.fn.getcurpos(M.display.tasks.window)[2]
@@ -160,22 +184,8 @@ local function set_keymaps(buff, enable)
 	end
 end
 
-M.display = {
-	tasks = { buffer = -1, window = -1 },
-	projects = { buffer = -1, window = -1 },
-}
-
-M.toggle = function()
-	if M.display.tasks.window and vim.api.nvim_win_is_valid(M.display.tasks.window) then
-		M.save_project(M.cur_project, M.display.tasks.buffer)
-		set_keymaps(M.display.tasks.window, false)
-		vim.api.nvim_win_close(M.display.tasks.window, true)
-		vim.api.nvim_win_close(M.display.projects.window, true)
-		M.display.tasks.window = nil
-		M.display.tasks.buffer = nil
-		M.display.projects.window = nil
-		M.display.projects.buffer = nil
-  else
+function M.view()
+	if not (M.display.tasks.window and vim.api.nvim_win_is_valid(M.display.tasks.window)) then
 		local width = vim.o.columns
 		local height = vim.o.lines
 
@@ -189,7 +199,6 @@ M.toggle = function()
       border = "single",
       title = "Todo",
     });
-
 
 		M.display.tasks.window = win
 		M.display.tasks.buffer = buff
@@ -210,6 +219,32 @@ M.toggle = function()
 	end
 end
 
+function M.hide()
+	if M.display.tasks.window and vim.api.nvim_win_is_valid(M.display.tasks.window) then
+		M.save_project(M.cur_project, M.display.tasks.buffer)
+		set_keymaps(M.display.tasks.window, false)
+		vim.api.nvim_win_close(M.display.tasks.window, true)
+		vim.api.nvim_win_close(M.display.projects.window, true)
+		M.display.tasks.window = nil
+		M.display.tasks.buffer = nil
+		M.display.projects.window = nil
+		M.display.projects.buffer = nil
+	end
+end
+
+function M.toggle_view()
+	if M.display.tasks.window and vim.api.nvim_win_is_valid(M.display.tasks.window) then
+		M.hide()
+  else
+		M.view()
+	end
+end
+
+-- Todo: deprecate this
+function M.toggle()
+	M.toggle_view()
+end
+
 -- @param data string: data to parse
 -- @return todo.ProjectList
 local function parse(data)
@@ -219,5 +254,37 @@ end
 M.projects = parse(load_file())
 local cwd = vim.fn.getcwd()
 M.select_project(cwd)
+
+local function run_cmd(cmd, ...)
+	if cmd == nil then
+		M.toggle_view()
+		return
+	end
+
+	local args = { ... }
+
+	local cmd_map = {
+		select = { cmd=M.select_project, nargs=1 },
+		toggle = { cmd=M.toggle_view, nargs=0 },
+	}
+
+	if cmd_map[cmd] then
+		if #args < cmd_map[cmd].nargs then
+			print("Not enough arguments for command: " .. cmd)
+			return
+		end
+		cmd_map[cmd].cmd(unpack(args))
+	else
+		print("Unknown command: " .. cmd)
+	end
+
+end
+
+vim.api.nvim_create_user_command("Todo", function(opts)
+	run_cmd(unpack(opts.fargs))
+end, {
+	nargs = "*",
+	complete = nil,
+})
 
 return M
