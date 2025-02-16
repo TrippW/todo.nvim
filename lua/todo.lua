@@ -19,7 +19,7 @@ end
 local file_path = vim.fs.joinpath(root_path, "todo.json")
 
 -- @return string: load the todo file
-local load_file = function()
+local function load_file()
   local file = io.open(file_path, "r")
   if file == nil then
     return vim.json.encode({ projects = {} })
@@ -29,7 +29,7 @@ local load_file = function()
   return lines
 end
 
-local save_file = function(data)
+local function save_file(data)
   local file = assert(io.open(file_path, "w"))
   file:write(vim.json.encode(data))
   file:close()
@@ -48,7 +48,7 @@ M.list_projects = function()
 	return lines
 end
 
-local render_project = function(project)
+local function render_project(project)
   local current_project = M.projects.projects[project]
 
   if current_project == nil then
@@ -64,7 +64,7 @@ local render_project = function(project)
   vim.api.nvim_buf_set_lines(M.display.tasks.buffer, 0, #lines, false, lines);
 end
 
-local highlight_project = function(name)
+local function highlight_project(name)
 	local width = vim.o.columns
 	local projects = M.list_projects()
 
@@ -150,7 +150,7 @@ M.toggle_task = function()
   M.save_project(M.cur_project, M.display.tasks.buffer)
 end
 
-local set_keymaps = function(buff, enable)
+local function set_keymaps(buff, enable)
 	if (buff and vim.fn.bufwinnr(buff) ~= -1) then
 		if enable then
 			vim.keymap.set("n", "<CR>", M.toggle_task, { noremap = true, buffer = buff })
@@ -212,7 +212,7 @@ end
 
 -- @param data string: data to parse
 -- @return todo.ProjectList
-local parse = function(data)
+local function parse(data)
   return vim.json.decode(data)
 end
 
